@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueController</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SysOperationJournaledParametersAttribute(true)]
+class Cent_ProjectRevenueController  extends SysOperationServiceController
+{   
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        super(classStr(Cent_ProjectRevenueService),
+            methodStr(Cent_ProjectRevenueService, processOperation), SysOperationExecutionMode::Synchronous);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defaultCaption</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Caption :Create Vendor
+    /// </summary>
+    /// <returns>ClassDescription</returns>
+    public ClassDescription defaultCaption()
+    {   
+        return "Create Project Revenue Report Date";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Controller construct
+    /// </summary>
+    /// <param name = "_executionMode">SysOperationExecutionMode::Synchronous</param>
+    /// <returns>Cent_CreateVendorBatchController</returns>
+    public static Cent_ProjectRevenueController construct(SysOperationExecutionMode _executionMode = SysOperationExecutionMode::Synchronous)
+    {
+        Cent_ProjectRevenueController controller;
+        controller = new Cent_ProjectRevenueController();
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// main method
+    /// </summary>
+    public static void main(Args _args)
+    {
+        Cent_ProjectRevenueController controller = Cent_ProjectRevenueController::construct();
+        BatchInfo batchInfo = controller.batchInfo();
+        SysRecurrenceData  recurrenceData = SysRecurrence::defaultRecurrence();
+
+        // start in x minutes from now so that the job can be inspected via the batchjob
+        // form before it starts.
+        recurrenceData = SysRecurrence::setRecurrenceStartDateTime(recurrenceData, DateTimeUtil::addMinutes(DateTimeUtil::utcNow(), 1));
+        recurrenceData = SysRecurrence::setRecurrenceEndAfter(recurrenceData, 1);
+        // Set the minimum recurrence interval of 1 minute
+        recurrenceData = SysRecurrence::setRecurrenceUnit(recurrenceData, SysRecurrenceUnit::Minute, 1);
+
+        Cent_ProjectRevenueContract contract = controller.getDataContractObject('_dataContract') as Cent_ProjectRevenueContract;
+
+        if (_args && _args.menuItemName())
+        {
+            contract.parmMenuItemName(_args.menuItemName());
+        }
+        batchInfo.parmRecurrenceData(recurrenceData);
+        
+        controller.startOperation();
+
+        if (_args.menuItemName() == menuItemActionStr(Cent_ProjectRevenueBatchMenu))
+        {
+            FormRun formRun = _args.caller();
+            formRun.dataSource().research(true);
+            formRun.dataSource().refresh();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    protected boolean validate()
+    {
+        boolean ret = true;
+
+        Cent_ProjectRevenueContract contract = this.getDataContractObject();
+
+        StartDate  invoiceStartDate = contract.parmInvoiceStartDate();
+        EndDate    invoiceEndDate = contract.parmInvoiceEndDate();
+
+        if (contract.parmMenuItemName() == menuItemActionStr(Cent_ProjectRevenueInquireMenu))
+        {
+            return true;
+        }
+        int startMonth = DateTimeUtil::month(DateTimeUtil::newDateTime(invoiceStartDate, 0));
+        int endMonth = DateTimeUtil::month(DateTimeUtil::newDateTime(invoiceEndDate, 0));
+
+        if (invoiceStartDate && invoiceEndDate)
+        {
+            if (ret && invoiceStartDate > invoiceEndDate)
+            {
+                return checkFailed("voucher start month must be less than voucher end month");
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

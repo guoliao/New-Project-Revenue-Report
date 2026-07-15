@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueInquireUIBuilder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class Cent_ProjectRevenueInquireUIBuilder extends SrsReportDataContractUIBuilder
+{
+    Cent_ProjectRevenueInquireContract contract;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>build</Name>
+				<Source><![CDATA[
+    public void build()
+    {   
+        str callerMenuItemName;
+        DialogGroup dlgGroup = dialog.addGroup();
+        FormBuildGroupControl groupControl = dlgGroup.control();
+
+        if (this.controller() && this.controller().parmArgs())
+        {
+            callerMenuItemName = this.controller().parmArgs().menuItemName();
+        }
+
+        FormBuildGroupControl paramterGroup = groupControl.parentControl().parentControl();
+        paramterGroup.columns(1);
+
+        FormBuildComboBoxControl invoiceStatusControl = paramterGroup.addControl(FormControlType::ComboBox, identifierStr(Cent_MainOrSubType));
+        invoiceStatusControl.label("Main/Sub");
+        invoiceStatusControl.enumType(enumNum(Cent_MainOrSubType));
+
+        FormBuildGroupControl dateGroup = paramterGroup.addControl(FormControlType::Group, identifierStr(DateGroup));
+        dateGroup.columns(2);
+
+
+        FormBuildDateControl invoiceStartDateControl = dateGroup.addControl(FormControlType::Date, identifierStr(invoiceStartDate));
+        invoiceStartDateControl.label("Voucher Start Date");
+
+        if (callerMenuItemName == menuItemOutputStr(Cent_ProjectRevenueInquireSSRSReport))
+        {
+            //invoiceStartDateControl.dateValue(dateStartMth(today()));
+            invoiceStartDateControl.visible(false);
+        }
+        else
+        {
+            invoiceStartDateControl.dateValue(dateStartMth(today()));
+            invoiceStartDateControl.visible(true);
+        }
+
+        invoiceStartDateControl.dateDay(DateDay::None);
+        invoiceStartDateControl.dateMonth(DateMonth::Digits2);
+
+        FormBuildDateControl invoiceEndDateControl = dateGroup.addControl(FormControlType::Date, identifierStr(invoiceEndDate));
+        invoiceEndDateControl.label("Voucher End Date");
+
+        if (callerMenuItemName == menuItemOutputStr(Cent_ProjectRevenueInquireSSRSReport))
+        {
+            //invoiceEndDateControl.dateValue(dateStartMth(today()));
+            invoiceEndDateControl.visible(false);
+        }
+        else
+        {
+            invoiceEndDateControl.dateValue(dateStartMth(today()));
+            invoiceEndDateControl.visible(true);
+        }
+        invoiceEndDateControl.dateDay(DateDay::None);
+        invoiceEndDateControl.dateMonth(DateMonth::Digits2);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public void getFromDialog()
+    {   
+        str callerMenuItemName;
+        Cent_MainOrSubType  mainOrSubType;
+        contract = this.dataContractObject() as Cent_ProjectRevenueInquireContract;
+
+        FormRun fr = this.dialog().dialogForm().formRun();
+
+        super();
+        FormComboBoxControl mainOrSubTypeControl = fr.design().controlName(identifierStr(Cent_MainOrSubType));
+        FormDateControl   invoiceStartDateControl = fr.design().controlName(identifierStr(invoiceStartDate));
+        FormDateControl   invoiceEndDateControl = fr.design().controlName(identifierStr(invoiceEndDate));
+
+        if (this.controller() && this.controller().parmArgs())
+        {
+            callerMenuItemName = this.controller().parmArgs().menuItemName();
+        }
+        if (callerMenuItemName != menuItemOutputStr(Cent_ProjectRevenueInquireSSRSReport))
+        {
+            contract.parmInvoiceStartDate(invoiceStartDateControl.dateValue());
+            contract.parmInvoiceEndDate(invoiceEndDateControl.dateValue());
+        }
+
+        contract.parmCent_MainOrSubType(str2Enum(mainOrSubType, mainOrSubTypeControl.valueStr()));
+        contract.parmCheckMsg("The data for the output object does not exist");
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

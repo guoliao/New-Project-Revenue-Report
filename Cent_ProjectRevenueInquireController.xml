@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueInquireController</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class Cent_ProjectRevenueInquireController extends SrsReportRunController
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        Cent_ProjectRevenueInquireController controller = new Cent_ProjectRevenueInquireController();
+
+        BatchInfo batchInfo = controller.batchInfo();
+        SysRecurrenceData  recurrenceData = SysRecurrence::defaultRecurrence();
+
+        // start in x minutes from now so that the job can be inspected via the batchjob
+        // form before it starts.
+        recurrenceData = SysRecurrence::setRecurrenceStartDateTime(recurrenceData, DateTimeUtil::addMinutes(DateTimeUtil::utcNow(), 1));
+        recurrenceData = SysRecurrence::setRecurrenceEndAfter(recurrenceData, 1);
+        // Set the minimum recurrence interval of 1 minute
+        recurrenceData = SysRecurrence::setRecurrenceUnit(recurrenceData, SysRecurrenceUnit::Minute, 1);
+
+        controller.parmArgs(_args);
+        controller.parmReportName(ssrsReportStr(Cent_ProjectRevenueInquireSSRSReport, Report));
+        
+
+        Cent_ProjectRevenueTable projectRevenueTable = _args.record();
+        Cent_ProjectRevenueInquireContract contract = controller.parmReportContract().parmRdpContract() as Cent_ProjectRevenueInquireContract;
+
+        if (projectRevenueTable && _args.menuItemName() == menuItemOutputStr(Cent_ProjectRevenueInquireSSRSReport))
+        {
+            contract.parmInvoiceStartDate(projectRevenueTable.StartDate);
+            contract.parmInvoiceEndDate(projectRevenueTable.EndDate);
+            controller.parmDialogCaption("Project Revenue Inquiries Export");
+        }
+        else
+        {
+            controller.parmDialogCaption("Project Revenue Inquiries All Month Export");
+        }
+
+        // 4. 设置批处理及其他信息
+        batchInfo.parmRecurrenceData(recurrenceData);
+
+        // 5. 最后启动操作
+        controller.startOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showBatchTab</Name>
+				<Source><![CDATA[
+    public boolean showBatchTab(boolean _showBatchTab = showBatchTab)
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showPrintSettings</Name>
+				<Source><![CDATA[
+    public boolean showPrintSettings()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>preRunModifyContract</Name>
+				<Source><![CDATA[
+    protected void preRunModifyContract()
+    {
+        this.parmReportContract().parmPrintSettings().parmSRSPrintArchiveContract();
+        this.parmReportContract().parmPrintSettings().fileFormat(SRSReportFileFormat::Excel);
+        this.parmReportContract().parmPrintSettings().printOnBothSides(SRSReportDuplexPrintingSetting::None);
+        this.parmReportContract().parmPrintSettings().printMediumType(SRSPrintMediumType::File);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onRenderingComplete</Name>
+				<Source><![CDATA[
+    protected void onRenderingComplete(SRSReportExecutionInfo _executionInfo)
+    {
+        if (!this.parmInBatch())
+        {
+            System.Byte[] reportBytes = new System.Byte [0]();
+            SRSProxy srsProxy;
+            SrsReportRunImpl reportRunImpl = this.parmReportRun() as SrsReportRunImpl;
+ 
+            Map reportParametersMap = reportRunImpl.parmReportRunService().createParamMapFromContract(this.parmReportContract());
+            Microsoft.Dynamics.AX.Framework.Reporting.Shared.ReportingService.ParameterValue[] parameterValueArray = SrsReportRunUtil::getParameterValueArray(reportParametersMap);
+            SrsReportRunPrinter reportRunPrinter = new SrsReportRunPrinter(this.parmReportContract(), parameterValueArray);
+            str deviceInfo = this.parmReportContract().parmPrintSettings().deviceInfo();
+            reportBytes = reportRunPrinter.parmSrsProxy().renderReportToByteArray(
+                this.parmReportContract().parmReportPath(),
+                parameterValueArray,
+                this.parmReportContract().parmPrintSettings().fileFormat(),
+                deviceInfo,
+                _executionInfo.parmExecutionId());
+
+            str reportNameExcel =  "Project Revenue Inquiries" + "_" + date2Str(systemDateGet(), 321,2,0,2,0,4);
+
+        
+            if (reportBytes)
+            {
+                System.IO.MemoryStream stream = new System.IO.MemoryStream(reportBytes);
+                str exportUrl = ExportToExcelStorageHelper::uploadExportStream(stream, OfficeAppApplicationType::Excel, reportNameExcel);
+                if (exportUrl)
+                {
+                    // Navigate to its URL to open it.
+                    Browser br = new Browser();
+                    br.navigate(exportUrl, false, false);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueInquireContract</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    DataContractAttribute,
+    SysOperationContractProcessingAttribute(classStr(Cent_ProjectRevenueInquireUIBuilder), SysOperationDataContractProcessingMode::CreateUIBuilderForRootContractOnly)
+]
+class Cent_ProjectRevenueInquireContract
+{   
+    StartDate           invoiceStartDate;
+    EndDate             invoiceEndDate;
+    Cent_MainOrSubType  mainOrSubType;
+    Str1260             checkMsg;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmInvoiceStartDate</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(invoiceStartDate))
+    ]
+    public StartDate parmInvoiceStartDate(StartDate _invoiceStartDate = invoiceStartDate)
+    {
+        invoiceStartDate = _invoiceStartDate;
+        return invoiceStartDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInvoiceEndDate</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(invoiceEndDate))
+    ]
+    public EndDate parmInvoiceEndDate(EndDate _invoiceEndDate = invoiceEndDate)
+    {
+        invoiceEndDate = _invoiceEndDate;
+        return invoiceEndDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCent_MainOrSubType</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(Cent_MainOrSubType))
+    ]
+    public Cent_MainOrSubType parmCent_MainOrSubType(Cent_MainOrSubType _mainOrSubType = mainOrSubType)
+    {
+        mainOrSubType = _mainOrSubType;
+        return mainOrSubType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCheckMsg</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(checkMsg))
+    ]
+    public Str1260 parmCheckMsg(Str1260 _checkMsg = checkMsg)
+    {
+        checkMsg = _checkMsg;
+        return checkMsg;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

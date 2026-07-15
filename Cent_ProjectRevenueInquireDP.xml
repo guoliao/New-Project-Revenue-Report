@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueInquireDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    SrsReportParameterAttribute(classStr(Cent_ProjectRevenueInquireContract))
+]
+class Cent_ProjectRevenueInquireDP extends SRSReportDataProviderPreProcessTempDB
+{
+    Cent_ProjectRevenueInquireContract  projectRevenueInquireContract;
+    Cent_ProjectRevenueReportTempTable  projectRevenueReportTempTable;
+    
+    RecordInsertList projectRevenueLineTableList = new RecordInsertList(tableNum(Cent_ProjectRevenueLineTable));
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getProjInvoiceTempCentTable</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute(tableStr(Cent_ProjectRevenueReportTempTable))]
+    public Cent_ProjectRevenueReportTempTable getProjInvoiceTempCentTable()
+    {
+        select * from projectRevenueReportTempTable;
+        return projectRevenueReportTempTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        projectRevenueInquireContract = this.parmDataContract();
+        Cent_MainOrSubType minOrSubType = projectRevenueInquireContract.parmCent_MainOrSubType();
+        InvoiceDate invoiceStartDate = projectRevenueInquireContract.parmInvoiceStartDate();
+        InvoiceDate invoiceEndDate = projectRevenueInquireContract.parmInvoiceEndDate();
+
+        InvoiceDate dateStartMonth = dateStartMth(invoiceStartDate);
+        InvoiceDate dateEndMonth = dateEndMth(invoiceEndDate);
+
+        this.setProjectInvoiceInsertDate(dateStartMonth, dateEndMonth);
+        projectRevenueLineTableList.insertDatabase();
+
+        
+        if (minOrSubType == Cent_MainOrSubType::Main)
+        {
+            this.getProjectRevenueMain(dateStartMonth, dateEndMonth);
+            this.setProjectInvoiceDate(dateStartMonth, dateEndMonth);
+
+        }
+        else if (minOrSubType == Cent_MainOrSubType::Sub)
+        {
+            this.getProjectRevenueSub(dateStartMonth, dateEndMonth);
+        }
+        else
+        {
+            this.getProjectRevenueMain(dateStartMonth, dateEndMonth);
+            this.getProjectRevenueSub(dateStartMonth, dateEndMonth);
+        }
+
+        Cent_ProjectRevenueLineTable       projectRevenueLineTable;
+        projectRevenueLineTable.skipDataMethods(true);
+        projectRevenueLineTable.skipEvents(true);
+        projectRevenueLineTable.skipDatabaseLog(true);
+        delete_from projectRevenueLineTable
+            where projectRevenueLineTable.InvoiceMainType == NoYes::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setProjectInvoiceInsertDate</Name>
+				<Source><![CDATA[
+    public void setProjectInvoiceInsertDate(InvoiceDate _dateStartMonth, InvoiceDate _dateEndMonth)
+    {
+        QueryBuildDataSource            projInvoiceJourDS;
+        ProjInvoiceJour                 projInvoiceJour;
+        ProjProposalJour                projProposalJour;
+        ProjInvoiceCost                 projInvoiceCost;
+        ProjCostTrans                   projCostTrans;
+        Cent_ProjectRevenueLineTable    projectRevenueLineTable;
+
+        Query query = new Query(queryStr(Cent_ProjectInvoicesQuery));
+
+        projInvoiceJourDS = query.dataSourceTable(tableNum(ProjInvoiceJour));
+
+        if (_dateStartMonth != dateNull() && _dateEndMonth != dateNull() )
+        {
+            projInvoiceJourDS.addRange(fieldNum(ProjInvoiceJour, InvoiceDate)).value(SysQuery::range(_dateStartMonth, _dateEndMonth));
+        }
+        else if (_dateStartMonth != dateNull() && _dateEndMonth == dateNull())
+        {
+            projInvoiceJourDS.addRange(fieldNum(ProjInvoiceJour, InvoiceDate)).value(strFmt("%1..", _dateStartMonth));
+        }
+        else if (_dateStartMonth == dateNull() && _dateEndMonth != dateNull())
+        {
+            projInvoiceJourDS.addRange(fieldNum(ProjInvoiceJour, InvoiceDate)).value(strFmt("..%1", _dateEndMonth));
+        }
+
+        QueryRun queryRun = new QueryRun(query);
+        
+        while (queryRun.next())
+        {
+            projInvoiceJour = queryRun.get(tableNum(ProjInvoiceJour));
+
+            TransDate invoiceDate = projInvoiceJour.InvoiceDate;
+
+            changecompany (projInvoiceJour.DataAreaId)
+            {
+                ProjTable   projTable = this.findProjTable(this.getDefaultDimesnion(ProjInvoiceJour.DefaultDimension, 6));
+
+                select crosscompany sum(LineAmount), maxof(CategoryId) from projInvoiceCost
+                    join projCostTrans
+                where projInvoiceCost.TransId == projCostTrans.TransId
+                    && projCostTrans.ProjId == projTable.ProjId
+                    && projInvoiceCost.InvoiceDate == invoiceDate
+                    && projInvoiceCost.ProjInvoiceId == projInvoiceJour.ProjInvoiceId;
+
+                if (projInvoiceCost.CategoryId != "NPT-Expense")
+                {
+                    continue;
+                }
+                select forupdate * from projectRevenueLineTable
+                    where projectRevenueLineTable.ProjId == projTable.ProjId;
+
+                if (!projectRevenueLineTable)
+                {
+                    projectRevenueLineTable.clear();
+                    projectRevenueLineTable.DataArea = projInvoiceJour.DataAreaId;
+                    projectRevenueLineTable.TransDateMonth = projInvoiceJour.InvoiceDate;
+                    projectRevenueLineTable.ProductLine = projTable.Cent_ProductLine;
+                    projectRevenueLineTable.VNSCustClassificationId = projTable.VNSCustClassificationId;
+                    projectRevenueLineTable.Dimension_C1 = this.getDefaultDimesnion(projInvoiceJour.DefaultDimension, 4);
+                    projectRevenueLineTable.CustAccount = projInvoiceJour.InvoiceAccount;
+                    projectRevenueLineTable.CustomerName = CustTable::find(projInvoiceJour.InvoiceAccount).name();
+                    projectRevenueLineTable.BOName = projTable.VNSBOName;
+                    projectRevenueLineTable.AccountMan = projTable.VNSAccountMan;
+                    projectRevenueLineTable.WorkerResponsible = projTable.WorkerResponsible;
+                    projectRevenueLineTable.MainORSub = Cent_MainOrSubType::Main;
+                    projectRevenueLineTable.Subconc = subStr(projTable.ProjId, 0 , 4);
+                    projectRevenueLineTable.ResourceCompanyId = projInvoiceJour.company();
+                    projectRevenueLineTable.ProjId = projTable.ProjId;
+                    projectRevenueLineTable.Name = projTable.Name;
+                    projectRevenueLineTable.Dimension_C3 = this.getDefaultDimesnion(projInvoiceJour.DefaultDimension, 2);
+                    projectRevenueLineTable.Dimension_CCC = this.getDefaultDimesnion(projInvoiceJour.DefaultDimension, 1);
+                    if (projTable.VNSEATP)
+                    {
+                        projectRevenueLineTable.RevenueType = Cent_RevenueType::Yes;
+                    }
+                    else
+                    {
+                        projectRevenueLineTable.RevenueType = Cent_RevenueType::No;
+                    }
+                    projectRevenueLineTable.CurrencyId = projInvoiceJour.CurrencyId;
+                    
+                    if (projInvoiceCost.LineAmount > 0)
+                    {
+                        projectRevenueLineTable.AmountCur = -decRound(projInvoiceCost.LineAmount, 2);
+                    }
+                    else
+                    {
+                        projectRevenueLineTable.AmountCur = abs(decRound(projInvoiceCost.LineAmount, 2));
+
+                    }
+
+                    CurrencyExchangeRate  exchangeRate;
+                    if (projectRevenueLineTable.CurrencyId == "" || projectRevenueLineTable.TransDateMonth == dateNull())
+                    {
+                        exchangeRate = 1;
+                    }
+                    else
+                    {
+                        exchangeRate = this.getExchangeRate(projectRevenueLineTable.TransDateMonth, projectRevenueLineTable.CurrencyId);
+                    }
+                    projectRevenueLineTable.ExchangeRate = decRound(exchangeRate, 8);
+                    projectRevenueLineTable.TotalAmountCur = projectRevenueLineTable.AmountCur;
+                    projectRevenueLineTable.TotalAmountUSDCur = decRound(projectRevenueLineTable.AmountCur * exchangeRate, 2);
+                    projectRevenueLineTable.TaxGroupId = projInvoiceJour.TaxGroupId;
+                    TaxValue salesTaxValue = this.getSalesTaxValue(projectRevenueLineTable.TaxGroupId);
+                    projectRevenueLineTable.TaxRate = num2Str(salesTaxValue, 0 , 2, DecimalSeparator::Dot, ThousandSeparator::Comma)+ "%";
+                    projectRevenueLineTable.TaxAmountCur = decRound(projectRevenueLineTable.AmountCur * salesTaxValue/100, 2);
+                    projectRevenueLineTable.TaxAmountUSDCur = decRound(projectRevenueLineTable.TaxAmountCur * exchangeRate, 2);
+                    projectRevenueLineTable.RevenueIncludeCur = projectRevenueLineTable.AmountCur + projectRevenueLineTable.TaxAmountCur;
+                    projectRevenueLineTable.RevenueIncludeVATCur = decRound(projectRevenueLineTable.RevenueIncludeCur * exchangeRate, 2);
+                    projectRevenueLineTable.InvoiceMainType = NoYes::Yes;
+                    projectRevenueLineTableList.add(projectRevenueLineTable);
+                }
+
+            }
+                
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findProjTable</Name>
+				<Source><![CDATA[
+    public  ProjTable findProjTable(ProjId _projId, boolean _forUpdate = false)
+    {
+        ProjTable   projTable = null;
+
+        projTable.selectForUpdate(_forUpdate);
+
+        if (_projId)
+        {
+            select firstonly crosscompany projTable where projTable.ProjId == _projId;
+        }
+
+        return projTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getExchangeRate</Name>
+				<Source><![CDATA[
+    public real getExchangeRate(ToDate _transDate, ProjSalesCurrencyCode _currencyId)
+    {
+        ExchangeRateHelper    exchangeRateHelper;
+        CurrencyExchangeRate  exchangeRate, exchangeRate1;
+        CurrencyCode          toCurreny = "USD";
+
+        exchangeRateHelper = ExchangeRateHelper::newCurrencyToCurrency(_currencyId, toCurreny);
+        exchangeRateHelper.parmExchangeDate(_transDate);
+        exchangeRateHelper.parmExchangeRateTypeRecId(Ledger::find(Ledger::current()).DefaultExchangeRateType);
+        exchangeRate1 = exchangeRateHelper.getExchangeRate1();
+        exchangeRate = exchangeRateHelper.displayStoredExchangeRate(exchangeRate1);
+        return exchangeRate;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesTaxValue</Name>
+				<Source><![CDATA[
+    public TaxValue getSalesTaxValue(TaxGroup _taxGroup)
+    {
+        TaxValue taxValue;
+
+        TaxGroupHeading taxGroupHeading;
+        TaxGroupData    taxGroupData;
+        TaxTable        taxTable;
+
+        select firstonly crosscompany taxGroupHeading
+            join taxGroupData
+            where taxGroupHeading.TaxGroup == taxGroupData.TaxGroup
+            && taxGroupHeading.TaxGroup == _taxGroup
+            join taxTable
+            where taxTable.TaxCode == taxGroupData.TaxCode;
+
+        
+        return taxTable.showTaxValue();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDefaultDimesnion</Name>
+				<Source><![CDATA[
+    public Str1260 getDefaultDimesnion(DimensionDefault _dimensionDefault, int _dimensionType)
+    {
+        Str1260 dimensionValue;
+        DimensionAttributeValueSetItem  setItem;
+        dimensionAttributeValue         value;
+        DimensionAttribute              attribute;
+
+        ProjParameters  parameter = ProjParameters::find();
+
+        while select Name from attribute
+                        join DisplayValue from value
+                            where value.DimensionAttribute              == attribute.RecId
+                        join setItem
+                            where setItem.DimensionAttributeValue       == value.RecId
+                            && setItem.DimensionAttributeValueSet   == _dimensionDefault
+        {
+            if ((attribute.Name == parameter.VNSProjectCCC && _dimensionType == 1)
+                || (attribute.Name == parameter.VNSGobalProjC2 && _dimensionType == 2)
+                || (attribute.Name == parameter.VNSGobalProjC3 && _dimensionType == 3)
+                || (attribute.Name == parameter.VNSGobalProjC4 && _dimensionType == 4)
+                || (attribute.Name == parameter.VNSSalesBU && _dimensionType == 5)
+                || (attribute.Name == parameter.VNSProject && _dimensionType == 6))
+            {
+                if (value.DisplayValue)
+                {
+                    dimensionValue = value.DisplayValue;
+                }
+                else
+                {
+                    dimensionValue = "";
+                }
+                break;
+            }
+        }
+        return dimensionValue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProjectRevenueMain</Name>
+				<Source><![CDATA[
+    public void getProjectRevenueMain(InvoiceDate _dateStartMonth, InvoiceDate _dateEndMonth)
+    {
+
+        QueryBuildDataSource    projectRevenueLineTableDS;
+
+        Query query = new Query(queryStr(Cent_ProjectRevenueInquireQuery));
+
+        projectRevenueLineTableDS = query.dataSourceTable(tableNum(Cent_ProjectRevenueLineTable));
+
+        projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, MainORSub)).value(queryValue(enum2int(Cent_MainOrSubType::Main)));
+
+        if (_dateStartMonth != dateNull() && _dateEndMonth != dateNull() )
+        {
+            projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, TransDateMonth)).value(SysQuery::range(_dateStartMonth, _dateEndMonth));
+        }
+        else if (_dateStartMonth != dateNull() && _dateEndMonth == dateNull())
+        {
+            projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, TransDateMonth)).value(strFmt("%1..", _dateStartMonth));
+        }
+        else if (_dateStartMonth == dateNull() && _dateEndMonth != dateNull())
+        {
+            projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, TransDateMonth)).value(strFmt("..%1", _dateEndMonth));
+        }
+
+        this.setProjectRevenueTempTable(query);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setProjectRevenueTempTable</Name>
+				<Source><![CDATA[
+    public void setProjectRevenueTempTable(Query _query)
+    {
+        Cent_ProjectRevenueLineTable    projectRevenueLineTable;
+
+        QueryRun queryRun = new QueryRun(_query);
+        
+        while (queryRun.next())
+        {
+            projectRevenueLineTable = queryRun.get(tableNum(Cent_ProjectRevenueLineTable));
+            projectRevenueReportTempTable.clear();
+
+            if (projectRevenueLineTable.DataArea == "SHVC" || projectRevenueLineTable.DataArea == "JSCT" || projectRevenueLineTable.DataArea == "PTTW")
+            {
+                projectRevenueReportTempTable.salesTaxType = 1;
+            }
+            else
+            {
+                projectRevenueReportTempTable.salesTaxType = 0;
+            }
+            projectRevenueReportTempTable.AccountMan = this.getReportUserName(projectRevenueLineTable.AccountMan);
+            projectRevenueReportTempTable.DataArea = projectRevenueLineTable.DataArea;
+            projectRevenueReportTempTable.AmountCur = projectRevenueLineTable.AmountCur;
+            projectRevenueReportTempTable.ProjId = projectRevenueLineTable.ProjId;
+            projectRevenueReportTempTable.TransDateMonth = projectRevenueLineTable.TransDateMonth;
+            projectRevenueReportTempTable.ProductLine = projectRevenueLineTable.ProductLine;
+            projectRevenueReportTempTable.VNSCustClassificationId = projectRevenueLineTable.VNSCustClassificationId;
+            projectRevenueReportTempTable.Dimension_C1 = projectRevenueLineTable.Dimension_C1;
+            projectRevenueReportTempTable.CustomerName = projectRevenueLineTable.CustomerName;
+            projectRevenueReportTempTable.CustAccount = projectRevenueLineTable.CustAccount;
+            projectRevenueReportTempTable.BOName = this.getReportUserName(projectRevenueLineTable.BOName);
+            projectRevenueReportTempTable.WorkerResponsible = this.getReportUserName(projectRevenueLineTable.WorkerResponsible);
+            projectRevenueReportTempTable.MainORSub = projectRevenueLineTable.MainORSub;
+            projectRevenueReportTempTable.Subconc = projectRevenueLineTable.Subconc;
+            projectRevenueReportTempTable.ResourceCompanyId = projectRevenueLineTable.ResourceCompanyId;
+            projectRevenueReportTempTable.Name = projectRevenueLineTable.Name;
+            projectRevenueReportTempTable.Dimension_C3 = projectRevenueLineTable.Dimension_C3;
+            projectRevenueReportTempTable.Dimension_CCC = projectRevenueLineTable.Dimension_CCC;
+            projectRevenueReportTempTable.RevenueType = projectRevenueLineTable.RevenueType;
+            projectRevenueReportTempTable.ProjGroupId = projectRevenueLineTable.ProjGroupId;
+            projectRevenueReportTempTable.CurrencyId = projectRevenueLineTable.CurrencyId;
+            projectRevenueReportTempTable.OverdueTrueCur = projectRevenueLineTable.OverdueTrueCur;
+            projectRevenueReportTempTable.InvoiceTrueCur = projectRevenueLineTable.InvoiceTrueCur;
+            projectRevenueReportTempTable.OtherTrueCur = projectRevenueLineTable.OtherTrueCur;
+            projectRevenueReportTempTable.TaxAmountCur = projectRevenueLineTable.TaxAmountCur;
+            projectRevenueReportTempTable.TaxAmountUSDCur = projectRevenueLineTable.TaxAmountUSDCur;
+            projectRevenueReportTempTable.RevenueIncludeCur = projectRevenueLineTable.RevenueIncludeCur;
+            projectRevenueReportTempTable.RevenueIncludeVATCur = projectRevenueLineTable.RevenueIncludeVATCur;
+            projectRevenueReportTempTable.Remark = projectRevenueLineTable.Remark;
+            projectRevenueReportTempTable.TaxGroupId = projectRevenueLineTable.TaxGroupId;
+            projectRevenueReportTempTable.TaxRate = projectRevenueLineTable.TaxRate;
+            projectRevenueReportTempTable.TotalAmountCur = projectRevenueLineTable.TotalAmountCur;
+            projectRevenueReportTempTable.TotalAmountUSDCur = projectRevenueLineTable.TotalAmountUSDCur;
+            projectRevenueReportTempTable.updateDateTime = projectRevenueLineTable.ModifiedDateTime;
+            projectRevenueReportTempTable.UpdateUser = projectRevenueLineTable.ModifiedBy;
+            projectRevenueReportTempTable.ExchangeRate = projectRevenueLineTable.ExchangeRate;
+            projectRevenueReportTempTable.insert();
+
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReportUserName</Name>
+				<Source><![CDATA[
+    public Name getReportUserName(HcmWorkerRecId _recId)
+    {
+        HcmWorker   hcmWorker;
+        DirPerson   DirPerson;
+
+        select firstonly crosscompany Person from hcmWorker
+            where hcmWorker.RecId == _recId
+            join Name from dirPerson
+            where hcmWorker.Person == dirPerson.RecId;
+
+        return dirPerson.Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setProjectInvoiceDate</Name>
+				<Source><![CDATA[
+    public void setProjectInvoiceDate(InvoiceDate _dateStartMonth, InvoiceDate _dateEndMonth)
+    {
+        QueryBuildDataSource            projInvoiceJourDS;
+        ProjInvoiceJour                 projInvoiceJour;
+        ProjInvoiceCost                 projInvoiceCost;
+        ProjCostTrans                   projCostTrans;
+        Cent_ProjectRevenueTempTable    projectRevenueTempTable;
+
+        Query query = new Query(queryStr(Cent_ProjectInvoicesQuery));
+
+        projInvoiceJourDS = query.dataSourceTable(tableNum(ProjInvoiceJour));
+
+        if (_dateStartMonth != dateNull() && _dateEndMonth != dateNull() )
+        {
+            projInvoiceJourDS.addRange(fieldNum(ProjInvoiceJour, InvoiceDate)).value(SysQuery::range(_dateStartMonth, _dateEndMonth));
+        }
+        else if (_dateStartMonth != dateNull() && _dateEndMonth == dateNull())
+        {
+            projInvoiceJourDS.addRange(fieldNum(ProjInvoiceJour, InvoiceDate)).value(strFmt("%1..", _dateStartMonth));
+        }
+        else if (_dateStartMonth == dateNull() && _dateEndMonth != dateNull())
+        {
+            projInvoiceJourDS.addRange(fieldNum(ProjInvoiceJour, InvoiceDate)).value(strFmt("..%1", _dateEndMonth));
+        }
+
+        QueryRun queryRun = new QueryRun(query);
+        
+        while (queryRun.next())
+        {
+            projInvoiceJour = queryRun.get(tableNum(ProjInvoiceJour));
+
+            TransDate invoiceDate = projInvoiceJour.InvoiceDate;
+
+            changecompany (projInvoiceJour.DataAreaId)
+            {
+                ProjTable   projTable = this.findProjTable(this.getDefaultDimesnion(ProjInvoiceJour.DefaultDimension, 6));
+
+                select crosscompany sum(LineAmount), maxof(CategoryId) from projInvoiceCost
+                    join projCostTrans
+                where projInvoiceCost.TransId == projCostTrans.TransId
+                    && projCostTrans.ProjId == projTable.ProjId
+                    && projInvoiceCost.InvoiceDate == invoiceDate
+                    && projInvoiceCost.ProjInvoiceId == projInvoiceJour.ProjInvoiceId;
+                
+                if (projInvoiceCost.CategoryId != "NPT-Expense")
+                {
+                    continue;
+                }
+                select forupdate crosscompany * from projectRevenueReportTempTable
+                    where projectRevenueReportTempTable.ProjId == projTable.ProjId;
+
+                changecompany (projectRevenueReportTempTable.DataAreaId)
+                {
+                    if (projectRevenueReportTempTable)
+                    {
+                        if (projInvoiceCost.LineAmount > 0)
+                        {
+                            projectRevenueReportTempTable.AmountCur += -decRound(projInvoiceCost.LineAmount, 2);
+                        }
+                        else
+                        {
+                            projectRevenueReportTempTable.AmountCur += abs(decRound(projInvoiceCost.LineAmount, 2));
+                        }
+
+                        projectRevenueReportTempTable.TotalAmountCur = projectRevenueReportTempTable.AmountCur + projectRevenueReportTempTable.OverdueTrueCur;
+
+                        projectRevenueReportTempTable.TotalAmountUSDCur = decRound(projectRevenueReportTempTable.TotalAmountCur * projectRevenueReportTempTable.ExchangeRate , 2);
+                        TaxValue salesTaxValue = this.getSalesTaxValue(projectRevenueReportTempTable.TaxGroupId);
+                        projectRevenueReportTempTable.TaxAmountCur = decRound(projectRevenueReportTempTable.TotalAmountCur * salesTaxValue/100, 2);
+
+                        projectRevenueReportTempTable.TaxAmountUSDCur = decRound(projectRevenueReportTempTable.TaxAmountCur * projectRevenueReportTempTable.ExchangeRate, 2);
+                        projectRevenueReportTempTable.RevenueIncludeCur = projectRevenueReportTempTable.TotalAmountCur + projectRevenueReportTempTable.TaxAmountCur;
+                        projectRevenueReportTempTable.RevenueIncludeVATCur = decRound(projectRevenueReportTempTable.RevenueIncludeCur * projectRevenueReportTempTable.ExchangeRate, 2);
+                        projectRevenueReportTempTable.update();
+                    }
+                }
+            }
+                
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProjectRevenueSub</Name>
+				<Source><![CDATA[
+    public void getProjectRevenueSub(InvoiceDate _dateStartMonth, InvoiceDate _dateEndMonth)
+    {   
+
+        QueryBuildDataSource    projectRevenueLineTableDS;
+
+        Query query = new Query(queryStr(Cent_ProjectRevenueInquireQuery));
+
+        projectRevenueLineTableDS = query.dataSourceTable(tableNum(Cent_ProjectRevenueLineTable));
+
+
+        projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, MainORSub)).value(queryValue(enum2int(Cent_MainOrSubType::Sub)));
+
+        if (_dateStartMonth != dateNull() && _dateEndMonth != dateNull() )
+        {
+            projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, TransDateMonth)).value(SysQuery::range(_dateStartMonth, _dateEndMonth));
+        }
+        else if (_dateStartMonth != dateNull() && _dateEndMonth == dateNull())
+        {
+            projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, TransDateMonth)).value(strFmt("%1..", _dateStartMonth));
+        }
+        else if (_dateStartMonth == dateNull() && _dateEndMonth != dateNull())
+        {
+            projectRevenueLineTableDS.addRange(fieldNum(Cent_ProjectRevenueLineTable, TransDateMonth)).value(strFmt("..%1", _dateEndMonth));
+        }
+
+        this.setProjectRevenueTempTable(query);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

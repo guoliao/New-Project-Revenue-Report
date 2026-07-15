@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueContract</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    DataContractAttribute,
+    SysOperationContractProcessingAttribute(classstr(Cent_ProjectRevenueUIBuilder), SysOperationDataContractProcessingMode::CreateUIBuilderForRootContractOnly)
+]
+class Cent_ProjectRevenueContract
+{
+    Str1260                 projLegal;
+    ProjId                  projId;
+    StartDate               invoiceStartDate;
+    EndDate                 invoiceEndDate;
+    Cent_TotalAmountType    totalAmountType;
+    Name                    proDemsionC1;
+    Cent_MainOrSubType      mainOrSubType;
+    MenuItemName            projectRevenueName;
+    str                     multiDateCompanies;
+    Date1980                projectDate;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmProjLegal</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(projLegal))
+    ]
+    public Str1260 parmProjLegal(Str1260 _projLegal = projLegal)
+    {
+        projLegal = _projLegal;
+        return projLegal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProjId</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(projId))
+    ]
+    public ProjId parmProjId(ProjId _projId = projId)
+    {
+        projId = _projId;
+        return projId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInvoiceStartDate</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(invoiceStartDate))
+    ]
+    public StartDate parmInvoiceStartDate(StartDate _invoiceStartDate = invoiceStartDate)
+    {
+        invoiceStartDate = _invoiceStartDate;
+        return invoiceStartDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInvoiceEndDate</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(invoiceEndDate))
+    ]
+    public EndDate parmInvoiceEndDate(EndDate _invoiceEndDate = invoiceEndDate)
+    {
+        invoiceEndDate = _invoiceEndDate;
+        return invoiceEndDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTotalAmountType</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(Cent_TotalAmountType))
+    ]
+    public Cent_TotalAmountType parmTotalAmountType(Cent_TotalAmountType _totalAmountType = totalAmountType)
+    {
+        totalAmountType = _totalAmountType;
+        return totalAmountType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProDemsionC1</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(proDemsionC1))
+    ]
+    public Name parmProDemsionC1(Name _proDemsionC1 = proDemsionC1)
+    {
+        proDemsionC1 = _proDemsionC1;
+        return proDemsionC1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCent_MainOrSubType</Name>
+				<Source><![CDATA[
+    [
+        DataMemberAttribute(identifierStr(Cent_MainOrSubType))
+    ]
+    public Cent_MainOrSubType parmCent_MainOrSubType(Cent_MainOrSubType _mainOrSubType = mainOrSubType)
+    {
+        mainOrSubType = _mainOrSubType;
+        return mainOrSubType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMenuItemName</Name>
+				<Source><![CDATA[
+    [DataMemberAttribute(identifierStr(ProjectRevenueName))]
+    public MenuItemName parmMenuItemName(MenuItemName _projectRevenueName = projectRevenueName)
+    {
+        projectRevenueName = _projectRevenueName;
+        return projectRevenueName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMultiDateCompanies</Name>
+				<Source><![CDATA[
+    [DataMemberAttribute('MultiDateCompanies')]
+    public str parmMultiDateCompanies(str _multiDateCompanies = multiDateCompanies)
+    {
+        multiDateCompanies = _multiDateCompanies;
+        return multiDateCompanies;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProjectDate</Name>
+				<Source><![CDATA[
+    [DataMemberAttribute('projectDate')]
+    public Date1980 parmProjectDate(Date1980 _projectDate = projectDate)
+    {
+        projectDate = _projectDate;
+        return projectDate;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,1021 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class Cent_ProjectRevenueService extends SysOperationServiceBase
+{   
+    #ISOCountryRegionCodes
+
+    Map projINTDeleteMap = new Map(Types::String, Types::String);
+
+    Cent_ProjectRevenueTempSumTable    projectRevenueTempSumTable;
+    RecordInsertList        projectRevenueTempSumTableList = new RecordInsertList(tableNum(Cent_ProjectRevenueTempSumTable));
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    public void processOperation(Cent_ProjectRevenueContract _dataContract)
+    {   
+        try
+        {
+            ttsbegin;          
+
+            if (!this.checkProjectRevenueTable(_dataContract))
+            {
+                throw error("Data duplication in the query time period of Project Revenue Report");
+            }
+
+            this.deleteRevenue();
+            if (_dataContract.parmCent_MainOrSubType() == Cent_MainOrSubType::Main)
+            {
+                this.insertProjectRevenueTempTable(_dataContract);
+            }
+            else if (_dataContract.parmCent_MainOrSubType() == Cent_MainOrSubType::Sub)
+            {
+                this.insertInterCompanyRevenueTempSumTable(_dataContract);
+            }
+            else
+            {
+                this.insertProjectRevenueTempTable(_dataContract);
+                this.insertInterCompanyRevenueTempSumTable(_dataContract);
+            }
+            projectRevenueTempSumTableList.insertDatabase();
+
+            this.deletePorj();
+
+            MenuItemName menuItem = _dataContract.parmMenuItemName();
+
+            switch (menuItem)
+            {
+                case menuItemActionStr(Cent_ProjectRevenueBatchMenu):
+                    this.insertProjectRevenueTempSumTable(_dataContract);
+                    break;
+
+                case menuItemActionStr(Cent_ProjectRevenueInquireMenu):
+                    this.insertProjectRevenueInquire(_dataContract);
+                    break;
+
+                default:                  
+                    error(strFmt("The processing logic for this menu %1 is undefined!", menuItem));
+                    break;
+            }            
+
+            ttscommit;
+            info("Create project income enquiry date successes");
+        }
+        catch
+        {
+        
+            throw error("Error in project income enquiry");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertInterCompanyRevenueTempSumTable</Name>
+				<Source><![CDATA[
+    public void insertInterCompanyRevenueTempSumTable(Cent_ProjectRevenueContract _dataContract)
+    {   
+        CustInvoiceTable        custInvoiceTable;
+        DirPartyTable           dirPartyTable;
+        CustInvoiceLine         custInvoiceLine;
+        InvoiceDate             dateStartMonth;
+        InvoiceDate             dateEndMonth;
+        QueryBuildDataSource    custInvoiceTableDS;
+        
+        ProjLegalEntities projLegal = _dataContract.parmProjLegal();
+        ProjId            projId = _dataContract.parmProjId();
+
+        
+        MenuItemName menuItem  = _dataContract.parmMenuItemName();
+
+        if (menuItem == menuItemActionStr(Cent_ProjectRevenueBatchMenu))
+        {
+            InvoiceDate       invoiceStartDate = _dataContract.parmInvoiceStartDate();
+            InvoiceDate       invoiceEndDate = _dataContract.parmInvoiceEndDate();
+            dateStartMonth = dateStartMth(invoiceStartDate);
+            dateEndMonth = dateEndMth(invoiceEndDate);
+        }
+        else
+        {
+            Date1980 projectDate = _dataContract.parmProjectDate();
+            dateStartMonth = dateStartMth(projectDate);
+            dateEndMonth = dateEndMth(projectDate);
+        }
+
+        Map               amountTotalMap = new Map(Types::Record, Types::Real);
+        Query query = new Query(queryStr(Cent_AllIntercompanyInvoiceCustomerQuery));
+        query.allowCrossCompany(true);
+        custInvoiceTableDS = query.dataSourceTable(tableNum(CustInvoiceTable));        
+        custInvoiceTableDS.addRange(fieldNum(CustInvoiceTable, ProjIntercompany)).value(SysQuery::valueNot(''));
+        
+        if (dateStartMonth != dateNull() && dateEndMonth != dateNull())
+        {
+            custInvoiceTableDS.addRange(fieldNum(CustInvoiceTable, InvoiceDate)).value(SysQuery::range(dateStartMonth, dateEndMonth));
+        }
+        else if (dateStartMonth != dateNull() && dateEndMonth == dateNull())
+        {
+            custInvoiceTableDS.addRange(fieldNum(CustInvoiceTable, InvoiceDate)).value(strFmt("%1..", dateStartMonth));
+        }
+        else if (dateStartMonth == dateNull() && dateEndMonth != dateNull())
+        {
+            custInvoiceTableDS.addRange(fieldNum(CustInvoiceTable, InvoiceDate)).value(strFmt("..%1", dateEndMonth));
+        }
+
+        QueryRun queryRun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            custInvoiceTable = queryRun.get(tableNum(CustInvoiceTable));
+            dirPartyTable = queryRun.get(tableNum(DirPartyTable));
+            custInvoiceLine = queryRun.get(tableNum(CustInvoiceLine));
+
+            if (projLegal && projLegal != custInvoiceTable.DataAreaId)
+            {
+                continue;
+            }
+
+            changecompany(custInvoiceTable.DataAreaId)
+            {
+                ProjTable projTable = this.findProjTable(this.getDefaultDimesnion(custInvoiceLine.DefaultDimension, 6));
+
+                if (projId && projTable.ProjId != projId)
+                {
+                    continue;
+                }
+
+                projectRevenueTempSumTable.clear();
+                projectRevenueTempSumTable.DataArea = custInvoiceTable.DataAreaId;
+                projectRevenueTempSumTable.TransDateMonth = custInvoiceTable.InvoiceDate;
+                projectRevenueTempSumTable.ProductLine = projTable.Cent_ProductLine;
+                projectRevenueTempSumTable.VNSCustClassificationId = projTable.VNSCustClassificationId;
+                projectRevenueTempSumTable.Dimension_C1 = this.getDefaultDimesnion(custInvoiceTable.DefaultDimension, 4);
+        
+                projectRevenueTempSumTable.CustomerName = dirPartyTable.Name;
+
+                projectRevenueTempSumTable.CustAccount = custInvoiceTable.OrderAccount;
+                projectRevenueTempSumTable.BOName = projTable.VNSBOName;
+                projectRevenueTempSumTable.AccountMan = projTable.VNSAccountMan;
+                projectRevenueTempSumTable.WorkerResponsible = projTable.WorkerResponsible;
+                projectRevenueTempSumTable.MainORSub = Cent_MainOrSubType::Sub;
+                projectRevenueTempSumTable.Subconc = subStr(projTable.ProjId, 0 , 4);
+                projectRevenueTempSumTable.ResourceCompanyId = custInvoiceTable.ProjIntercompany;
+                projectRevenueTempSumTable.ProjId = projTable.ProjId;
+                projectRevenueTempSumTable.Name = projTable.Name;
+                projectRevenueTempSumTable.Dimension_C3 = this.getDefaultDimesnion(custInvoiceTable.DefaultDimension, 2);
+                projectRevenueTempSumTable.Dimension_CCC = this.getDefaultDimesnion(custInvoiceTable.DefaultDimension, 1);
+                if (projTable.VNSEATP)
+                {
+                    projectRevenueTempSumTable.RevenueType = Cent_RevenueType::Yes;
+                }
+                else
+                {
+                    projectRevenueTempSumTable.RevenueType = Cent_RevenueType::No;
+                }
+                projectRevenueTempSumTable.ProjGroupId = ProjTable.ProjGroupId;        
+                projectRevenueTempSumTable.CurrencyId = custInvoiceTable.CurrencyCode;
+                
+                projectRevenueTempSumTable.AmountCur = custInvoiceLine.AmountCur;
+                //if (amountTotalMap.exists(custInvoiceTable))
+                //{
+                //    projectRevenueTempSumTable.AmountCur = amountTotalMap.lookup(custInvoiceTable);
+                //}
+                //else
+                //{
+                //    CustFreeInvoiceCalcTotals   custFreeInvoiceCalcTotals = new CustFreeInvoiceCalcTotals(custInvoiceTable);
+                //    custFreeInvoiceCalcTotals.calc();
+                //    container displayFields = custFreeInvoiceCalcTotals.displayFields();
+                //    projectRevenueTempSumTable.AmountCur = conPeek(displayFields, CustFreeInvoiceCalcTotals::posTotalAmount());
+                //    amountTotalMap.insert(custInvoiceTable, projectRevenueTempSumTable.AmountCur);
+                //}
+
+                CurrencyExchangeRate  exchangeRate;
+
+                if (projectRevenueTempSumTable.CurrencyId == "" || projectRevenueTempSumTable.TransDateMonth == dateNull())
+                {
+                    exchangeRate = 1;
+                }
+                else
+                {
+                    exchangeRate = this.getExchangeRate(custInvoiceTable.InvoiceDate, custInvoiceTable.CurrencyCode);
+                }
+                projectRevenueTempSumTable.ExchangeRate = decRound(exchangeRate, 8);
+                projectRevenueTempSumTable.TotalAmountCur = projectRevenueTempSumTable.AmountCur;
+                projectRevenueTempSumTable.TotalAmountUSDCur = decRound(projectRevenueTempSumTable.AmountCur * exchangeRate, 2);            
+                projectRevenueTempSumTable.TaxGroupId = custInvoiceLine.TaxGroup;
+                TaxValue salesTaxValue = this.getSalesTaxValue(projectRevenueTempSumTable.TaxGroupId);
+                projectRevenueTempSumTable.TaxRate = num2Str(salesTaxValue, 0 , 2, DecimalSeparator::Dot, ThousandSeparator::Comma)+ "%";
+
+                //CustInvoiceJour custInvoiceJour = custInvoiceTable.custInvoiceJour();
+
+                //CustInvoiceTrans    custInvoiceTrans;
+                //select * from custInvoiceTrans 
+                //    where custInvoiceTrans.InvoiceId == custInvoiceJour.InvoiceId;
+
+                projectRevenueTempSumTable.TaxAmountCur = custInvoiceLine.displayTaxAmount();
+                projectRevenueTempSumTable.TaxAmountUSDCur = decRound(projectRevenueTempSumTable.TaxAmountCur * exchangeRate, 2);
+                projectRevenueTempSumTable.RevenueIncludeCur = projectRevenueTempSumTable.AmountCur + projectRevenueTempSumTable.TaxAmountCur;
+                projectRevenueTempSumTable.RevenueIncludeVATCur = decRound(projectRevenueTempSumTable.RevenueIncludeCur * exchangeRate, 2);               
+                projectRevenueTempSumTableList.add(projectRevenueTempSumTable);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertProjectRevenueTempSumTable</Name>
+				<Source><![CDATA[
+    public void insertProjectRevenueTempSumTable(Cent_ProjectRevenueContract _dataContract)
+    {   
+        RecordInsertList projectRevenueTempTableList = new RecordInsertList(tableNum(Cent_ProjectRevenueTempTable));
+        Map projRemarkMap = new Map(Types::String, Types::String);
+        Cent_ProjectRevenueTempTable       projectRevenueTempTable;
+        QueryBuildDataSource               projectRevenueTempSumDS;
+        //CompanyInfo                        companyInfo;
+
+        //ttsbegin;
+        //while select crosscompany DataArea from companyInfo
+        //    group by companyInfo.DataArea
+        //{
+        //    changecompany(companyInfo.DataArea)
+        //    {
+        //        Cent_ProjectRevenueTempTable       projectRevenueTempTableDelete;
+        //        delete_from  projectRevenueTempTableDelete where
+        //            projectRevenueTempTableDelete.DataAreaId == companyInfo.DataArea;
+        //    }
+        //}
+        //ttscommit;
+        Cent_ProjectRevenueTempTable       projectRevenueTempTableDelete;
+        projectRevenueTempTableDelete.skipDataMethods(true);
+        projectRevenueTempTableDelete.skipEvents(true);
+        projectRevenueTempTableDelete.skipDatabaseLog(true);
+        delete_from projectRevenueTempTableDelete;
+
+        this.setRemarkDatetoMap(projRemarkMap);
+        Query query = new Query(queryStr(Cent_ProjectRevenueQuery));
+        projectRevenueTempSumDS =  query.dataSourceTable(tableNum(Cent_ProjectRevenueTempSumTable));
+
+        ProjLegalEntities projLegal = _dataContract.parmProjLegal();
+        ProjId            projId = _dataContract.parmProjId();
+        Cent_TotalAmountType    totalAmountType = _dataContract.parmTotalAmountType();
+        Name                    proDemsionC1 = _dataContract.parmProDemsionC1();
+
+        if(projLegal)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, DataArea)).value(queryValue(projLegal));
+        }
+            
+        if (projId)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, ProjId)).value(queryValue(projId));
+        }
+
+        if (totalAmountType == Cent_TotalAmountType::Yes)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, AmountCur)).value(SysQuery::valueNot(0));
+        }
+
+        if (proDemsionC1)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, Dimension_C1)).value(queryValue(proDemsionC1));
+        }
+        QueryRun queryRun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            projectRevenueTempSumTable = queryRun.get(tableNum(Cent_ProjectRevenueTempSumTable));
+
+            
+            changecompany(projectRevenueTempSumTable.DataArea)
+            {   
+                if (totalAmountType == Cent_TotalAmountType::Yes && projectRevenueTempSumTable.AmountCur == 0)
+                {
+                    continue;
+                }
+                projectRevenueTempTable.clear();
+                projectRevenueTempTable.AccountMan = projectRevenueTempSumTable.AccountMan;
+                projectRevenueTempTable.DataArea = strUpr(projectRevenueTempSumTable.DataArea);
+                projectRevenueTempTable.AmountCur = projectRevenueTempSumTable.AmountCur;
+                projectRevenueTempTable.ProjId = projectRevenueTempSumTable.ProjId;
+                projectRevenueTempTable.TransDateMonth = projectRevenueTempSumTable.TransDateMonth;
+                projectRevenueTempTable.ProductLine = projectRevenueTempSumTable.ProductLine;
+                projectRevenueTempTable.VNSCustClassificationId = projectRevenueTempSumTable.VNSCustClassificationId;
+                projectRevenueTempTable.Dimension_C1 = projectRevenueTempSumTable.Dimension_C1;
+                projectRevenueTempTable.CustomerName = projectRevenueTempSumTable.CustomerName;
+                projectRevenueTempTable.CustAccount = projectRevenueTempSumTable.CustAccount;
+                projectRevenueTempTable.BOName = projectRevenueTempSumTable.BOName;
+                projectRevenueTempTable.WorkerResponsible = projectRevenueTempSumTable.WorkerResponsible;
+                projectRevenueTempTable.MainORSub = projectRevenueTempSumTable.MainORSub;
+                projectRevenueTempTable.Subconc = projectRevenueTempSumTable.Subconc;
+                projectRevenueTempTable.ResourceCompanyId = strUpr(projectRevenueTempSumTable.ResourceCompanyId);
+                projectRevenueTempTable.Name = projectRevenueTempSumTable.Name;
+                projectRevenueTempTable.Dimension_C3 = projectRevenueTempSumTable.Dimension_C3;
+                projectRevenueTempTable.Dimension_CCC = projectRevenueTempSumTable.Dimension_CCC;
+                projectRevenueTempTable.RevenueType = projectRevenueTempSumTable.RevenueType;
+                projectRevenueTempTable.ProjGroupId = projectRevenueTempSumTable.ProjGroupId;
+                projectRevenueTempTable.CurrencyId = projectRevenueTempSumTable.CurrencyId;
+                projectRevenueTempTable.OverdueTrueCur = projectRevenueTempSumTable.OverdueTrueCur;
+                projectRevenueTempTable.InvoiceTrueCur = projectRevenueTempSumTable.InvoiceTrueCur;
+                projectRevenueTempTable.OtherTrueCur = projectRevenueTempSumTable.OtherTrueCur;
+
+                if (projectRevenueTempTable.MainORSub == Cent_MainOrSubType::Sub)
+                {   
+                    projectRevenueTempTable.TaxAmountCur = projectRevenueTempSumTable.TaxAmountCur;
+                    projectRevenueTempTable.TaxAmountUSDCur = projectRevenueTempSumTable.TaxAmountUSDCur;
+                    projectRevenueTempTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                    projectRevenueTempTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                    projectRevenueTempTable.RevenueIncludeCur = projectRevenueTempSumTable.RevenueIncludeCur;
+                    projectRevenueTempTable.RevenueIncludeVATCur = projectRevenueTempSumTable.RevenueIncludeVATCur;
+                }
+                else
+                {
+                    if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoCN]))
+                    {
+                        projectRevenueTempTable.TaxAmountCur = projectRevenueTempSumTable.TaxAmountCur;
+                        projectRevenueTempTable.TaxAmountUSDCur = projectRevenueTempSumTable.TaxAmountUSDCur;
+                        projectRevenueTempTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueTempTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                        projectRevenueTempTable.RevenueIncludeCur = projectRevenueTempSumTable.RevenueIncludeCur;
+                        projectRevenueTempTable.RevenueIncludeVATCur = projectRevenueTempSumTable.RevenueIncludeVATCur;
+                    }
+                    else
+                    {
+                        projectRevenueTempTable.TaxAmountCur = 0;
+                        projectRevenueTempTable.TaxAmountUSDCur = 0;
+                        projectRevenueTempTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueTempTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                        projectRevenueTempTable.RevenueIncludeCur = projectRevenueTempTable.TotalAmountCur;
+                        projectRevenueTempTable.RevenueIncludeVATCur = projectRevenueTempTable.TotalAmountUSDCur;
+                    }
+
+                    if (projectRevenueTempSumTable.DataArea == identifierStr(PTTW))
+                    {   
+                        projectRevenueTempTable.AmountCur = projectRevenueTempSumTable.AmountCur;                       
+                        projectRevenueTempTable.TaxAmountUSDCur = projectRevenueTempSumTable.TaxAmountUSDCur;
+                        projectRevenueTempTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                        projectRevenueTempTable.RevenueIncludeVATCur = projectRevenueTempSumTable.RevenueIncludeVATCur;
+                    }
+                }
+
+                if (projectRevenueTempSumTable.DataArea == identifierStr(PTTW))
+                {
+                    if (projectRevenueTempSumTable.TaxGroupId)
+                    {
+                        projectRevenueTempTable.TaxAmountCur = decRound(projectRevenueTempSumTable.TaxAmountCur, 0);
+                        projectRevenueTempTable.TotalAmountCur = decRound(projectRevenueTempSumTable.TotalAmountCur, 0);
+                        projectRevenueTempTable.RevenueIncludeCur = decRound(projectRevenueTempSumTable.RevenueIncludeCur, 0);
+                    }
+                    else
+                    {
+                        projectRevenueTempTable.TaxAmountCur = projectRevenueTempSumTable.TaxAmountCur;
+                        projectRevenueTempTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueTempTable.RevenueIncludeCur = projectRevenueTempSumTable.RevenueIncludeCur;
+                    }
+                }
+                
+                if (projRemarkMap.exists(projectRevenueTempTable.ProjId))
+                {
+                    projectRevenueTempTable.Remark = projRemarkMap.lookup(projectRevenueTempTable.ProjId);
+                }
+                else
+                {
+                    projectRevenueTempTable.Remark = projectRevenueTempSumTable.Remark;
+                }
+                projectRevenueTempTable.ExchangeRate = projectRevenueTempSumTable.ExchangeRate;               
+                projectRevenueTempTable.TaxGroupId = projectRevenueTempSumTable.TaxGroupId;
+                projectRevenueTempTable.TaxRate = projectRevenueTempSumTable.TaxRate;
+                projectRevenueTempTable.InvoiceMainType = NoYes::No;
+                projectRevenueTempTableList.add(projectRevenueTempTable);
+            }
+        }
+        projectRevenueTempTableList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertProjectRevenueTempTable</Name>
+				<Source><![CDATA[
+    public void insertProjectRevenueTempTable(Cent_ProjectRevenueContract _dataContract)
+    {
+        VNSProjPostTransView    projPostTransView;
+        ProjTable               projTable;
+        ProjInvoiceTable        projInvoiceTable;
+        ProjId                  projIdGroup;
+        InvoiceDate             dateStartMonth;
+        InvoiceDate             dateEndMonth;
+
+        MenuItemName menuItem  = _dataContract.parmMenuItemName();
+
+        if (menuItem ==menuItemActionStr(Cent_ProjectRevenueBatchMenu))
+        {
+            InvoiceDate       invoiceStartDate = _dataContract.parmInvoiceStartDate();
+            InvoiceDate       invoiceEndDate = _dataContract.parmInvoiceEndDate();          
+            dateStartMonth = dateStartMth(invoiceStartDate);
+            dateEndMonth = dateEndMth(invoiceEndDate);
+        }
+        else
+        {
+            Date1980 projectDate = _dataContract.parmProjectDate();
+            dateStartMonth = dateStartMth(projectDate);
+            dateEndMonth = dateEndMth(projectDate);       
+        }
+
+        Query query = new Query();
+        query.allowCrossCompany(true);
+        QueryBuildDataSource    projPostTransTableDS;
+        projPostTransTableDS = query.addDataSource(tableNum(VNSProjPostTransView));
+
+        if (dateStartMonth != dateNull() && dateEndMonth != dateNull() )
+        {
+            projPostTransTableDS.addRange(fieldNum(VNSProjPostTransView, VoucherDate)).value(SysQuery::range(dateStartMonth, dateEndMonth));
+        }
+        else if (dateStartMonth != dateNull() && dateEndMonth == dateNull())
+        {
+            projPostTransTableDS.addRange(fieldNum(VNSProjPostTransView, VoucherDate)).value(strFmt("%1..", dateStartMonth));
+        }
+        else if (dateStartMonth == dateNull() && dateEndMonth != dateNull())
+        {
+            projPostTransTableDS.addRange(fieldNum(VNSProjPostTransView, VoucherDate)).value(strFmt("..%1", dateEndMonth));
+        }
+        projPostTransTableDS.addOrderByField(fieldNum(VNSProjPostTransView, ProjId));
+        projPostTransTableDS.addOrderByField(fieldNum(VNSProjPostTransView, LegalEntity));
+        QueryRun queryRun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            projPostTransView = queryRun.get(tableNum(VNSProjPostTransView));
+
+            changecompany (projPostTransView.LegalEntity)
+            {   
+                projectRevenueTempSumTable.clear();
+                projectRevenueTempSumTable.ProjTransType = projPostTransView.ProjTransType;
+                projectRevenueTempSumTable.CategoryId = projPostTransView.CategoryId;
+                projectRevenueTempSumTable.Type = projPostTransView.Type;
+                projectRevenueTempSumTable.ProjInvoiceStatus = projPostTransView.projInvoiceStatus(projPostTransView);
+
+                if (projectRevenueTempSumTable.ProjTransType == ProjTransType::OnAccount)
+                {
+                    continue;
+                }
+                else if (projectRevenueTempSumTable.CategoryId == "Adjustment Advance_Fee")
+                {
+                    continue;
+                }
+                else if (projectRevenueTempSumTable.CategoryId == "Advance PID A-B_Fee")
+                {
+                    continue;
+                }
+                else if (projectRevenueTempSumTable.Type == ProjType::TimeMaterial && projectRevenueTempSumTable.ProjInvoiceStatus == ProjInvoiceStatus::Nonchargeable)
+                {
+                    continue;
+                }
+                else if (projectRevenueTempSumTable.Type == ProjType::FixedPrice && projectRevenueTempSumTable.CategoryId != "Sales Est")
+                {
+                    continue;
+                }
+                else if (projectRevenueTempSumTable.ProjInvoiceStatus == ProjInvoiceStatus::Adjusted)
+                {
+                    continue;
+                }
+                
+                if (projectRevenueTempSumTable.Type == ProjType::Internal)
+                {
+                    projINTDeleteMap.add(projPostTransView.ProjId, projPostTransView.LegalEntity);
+                }
+
+                projTable = this.findProjTable(projPostTransView.ProjId);
+                projInvoiceTable = this.findProjInvoiceTable(projTable.ProjInvoiceProjId, projTable.DataAreaId);
+
+                projectRevenueTempSumTable.DataArea = projPostTransView.LegalEntity;
+                projectRevenueTempSumTable.TransDateMonth = projPostTransView.VoucherDate;
+                projectRevenueTempSumTable.ProductLine = projTable.Cent_ProductLine;
+                projectRevenueTempSumTable.VNSCustClassificationId = projTable.VNSCustClassificationId;
+                projectRevenueTempSumTable.Dimension_C1 = projPostTransView.projectC4();
+                projectRevenueTempSumTable.CustomerName = projPostTransView.CustomerName;
+                projectRevenueTempSumTable.CustAccount = projTable.CustAccount;
+                projectRevenueTempSumTable.BOName = projTable.VNSBOName;
+                projectRevenueTempSumTable.AccountMan = projTable.VNSAccountMan;
+                projectRevenueTempSumTable.WorkerResponsible = projTable.WorkerResponsible;
+                projectRevenueTempSumTable.MainORSub = Cent_MainOrSubType::Main;
+                projectRevenueTempSumTable.Subconc = "NA";
+                if (projPostTransView.LegalEntity == projPostTransView.ResourceCompanyId)
+                {
+                    projectRevenueTempSumTable.ResourceCompanyId = "NA";
+                }
+                else
+                {
+                    projectRevenueTempSumTable.ResourceCompanyId = projPostTransView.ResourceCompanyId;
+                }
+                projectRevenueTempSumTable.ProjId = projPostTransView.ProjId;
+                projectRevenueTempSumTable.Name = projPostTransView.ProjName;
+                projectRevenueTempSumTable.Dimension_C3 = projPostTransView.projectC2();
+                projectRevenueTempSumTable.Dimension_CCC = projPostTransView.projectC1();
+                if (projTable.VNSEATP)
+                {
+                    projectRevenueTempSumTable.RevenueType = Cent_RevenueType::Yes;
+                }
+                else
+                {
+                    projectRevenueTempSumTable.RevenueType = Cent_RevenueType::No;
+                }
+                projectRevenueTempSumTable.ProjGroupId = ProjTable.ProjGroupId;
+          
+                projectRevenueTempSumTable.CurrencyId = projInvoiceTable.CurrencyId;
+
+                if (projectRevenueTempSumTable.CategoryId != "True Up_Fee")
+                {
+                    projectRevenueTempSumTable.AmountCur = projPostTransView.psaTotalSales(projPostTransView);
+                }
+                else
+                {
+                    projectRevenueTempSumTable.OverdueTrueCur = projPostTransView.psaTotalSales(projPostTransView);
+                    projectRevenueTempSumTable.Remark = projPostTransView.Txt;                   
+                }
+                CurrencyExchangeRate  exchangeRate;
+
+                if (projectRevenueTempSumTable.CurrencyId == "" || projectRevenueTempSumTable.TransDateMonth == dateNull())
+                {
+                    exchangeRate = 1;
+                }
+                else
+                {   
+                    date nextDate = nextMth(projectRevenueTempSumTable.TransDateMonth);
+                    exchangeRate = this.getExchangeRate(nextDate, projectRevenueTempSumTable.CurrencyId);
+
+                    if (!exchangeRate)
+                    {
+                        exchangeRate = this.getExchangeRate(projectRevenueTempSumTable.TransDateMonth, projectRevenueTempSumTable.CurrencyId);
+                    }
+                }
+                projectRevenueTempSumTable.ExchangeRate = decRound(exchangeRate, 8);
+                projectRevenueTempSumTable.TotalAmountCur = projectRevenueTempSumTable.AmountCur + projectRevenueTempSumTable.OverdueTrueCur;
+
+                projectRevenueTempSumTable.TotalAmountUSDCur = decRound(projPostTransView.psaTotalSales(projPostTransView) * exchangeRate, 2);
+                
+                if (projTable.TaxGroupId)
+                {
+                    projectRevenueTempSumTable.TaxGroupId = projTable.TaxGroupId;
+                }
+                else
+                {
+                    projectRevenueTempSumTable.TaxGroupId = projInvoiceTable.TaxGroupId;
+                }
+                TaxValue salesTaxValue = this.getSalesTaxValue(projectRevenueTempSumTable.TaxGroupId);
+                projectRevenueTempSumTable.TaxRate = num2Str(salesTaxValue, 0 , 2, DecimalSeparator::Dot, ThousandSeparator::Comma)+ "%";
+                projectRevenueTempSumTable.TaxAmountCur = decRound(projectRevenueTempSumTable.TotalAmountCur * salesTaxValue/100, 2);
+                projectRevenueTempSumTable.TaxAmountUSDCur = decRound(projectRevenueTempSumTable.TaxAmountCur * exchangeRate, 2);
+                projectRevenueTempSumTable.RevenueIncludeCur = projectRevenueTempSumTable.TotalAmountCur + projectRevenueTempSumTable.TaxAmountCur;
+                projectRevenueTempSumTable.RevenueIncludeVATCur = decRound(projectRevenueTempSumTable.RevenueIncludeCur * exchangeRate, 2);
+                
+                projectRevenueTempSumTableList.add(projectRevenueTempSumTable);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findProjInvoiceTable</Name>
+				<Source><![CDATA[
+    public ProjInvoiceTable findProjInvoiceTable(ProjInvoiceProjId _projInvoiceProjId, DataAreaId _dataAreaId, boolean _forupdate = false)
+    {
+        ProjInvoiceTable projInvoiceTable = null;
+
+        projInvoiceTable.selectForUpdate(_forupdate);
+
+        if (_projInvoiceProjId)
+        {
+            select firstonly crosscompany projInvoiceTable where projInvoiceTable.ProjInvoiceProjId == _projInvoiceProjId
+                    && projInvoiceTable.DataAreaId == _dataAreaId;
+        }
+
+        return projInvoiceTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findProjTable</Name>
+				<Source><![CDATA[
+    public ProjTable findProjTable(ProjId _projId, boolean _forUpdate = false)
+    {
+        ProjTable   projTable = null;
+
+        projTable.selectForUpdate(_forUpdate);
+
+        if (_projId)
+        {
+            select firstonly crosscompany projTable where projTable.ProjId == _projId;
+        }
+
+        return projTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDefaultDimesnion</Name>
+				<Source><![CDATA[
+    public Str1260 getDefaultDimesnion(DimensionDefault _dimensionDefault, int _dimensionType)
+    {
+        Str1260 dimensionValue;
+        DimensionAttributeValueSetItem  setItem;
+        dimensionAttributeValue         value;
+        DimensionAttribute              attribute;
+
+        ProjParameters  parameter = ProjParameters::find();
+
+        while select crosscompany Name from attribute
+                        join DisplayValue from value
+                            where value.DimensionAttribute              == attribute.RecId
+                        join setItem
+                            where setItem.DimensionAttributeValue       == value.RecId
+                            && setItem.DimensionAttributeValueSet   == _dimensionDefault
+        {
+            if ((attribute.Name == parameter.VNSProjectCCC && _dimensionType == 1)
+                || (attribute.Name == parameter.VNSGobalProjC2 && _dimensionType == 2)
+                || (attribute.Name == parameter.VNSGobalProjC3 && _dimensionType == 3)
+                || (attribute.Name == parameter.VNSGobalProjC4 && _dimensionType == 4)
+                || (attribute.Name == parameter.VNSSalesBU && _dimensionType == 5)
+                || (attribute.Name == parameter.VNSProject && _dimensionType == 6))
+            {
+                if (value.DisplayValue)
+                {
+                    dimensionValue = value.DisplayValue;
+                }
+                else
+                {
+                    dimensionValue = "";
+                }
+                break;
+            }
+        }
+        return dimensionValue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesTaxValue</Name>
+				<Source><![CDATA[
+    public TaxValue getSalesTaxValue(TaxGroup _taxGroup)
+    {
+        TaxValue taxValue;
+
+        TaxGroupHeading taxGroupHeading;
+        TaxGroupData    taxGroupData;
+        TaxTable        taxTable;
+
+        select firstonly crosscompany taxGroupHeading
+            join taxGroupData
+            where taxGroupHeading.TaxGroup == taxGroupData.TaxGroup
+            && taxGroupHeading.TaxGroup == _taxGroup
+            join taxTable
+            where taxTable.TaxCode == taxGroupData.TaxCode;
+
+        
+        return taxTable.showTaxValue();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getExchangeRate</Name>
+				<Source><![CDATA[
+    public real getExchangeRate(ToDate _transDate, ProjSalesCurrencyCode _currencyId)
+    {
+        ExchangeRateHelper    exchangeRateHelper;
+        CurrencyExchangeRate  exchangeRate, exchangeRate1;
+        CurrencyCode          toCurreny = "USD";
+
+        exchangeRateHelper = ExchangeRateHelper::newCurrencyToCurrency(_currencyId, toCurreny);
+        exchangeRateHelper.parmExchangeDate(_transDate);
+        exchangeRateHelper.parmExchangeRateTypeRecId(Ledger::find(Ledger::current()).DefaultExchangeRateType);
+        exchangeRate1 = exchangeRateHelper.getExchangeRate1();
+        exchangeRate = exchangeRateHelper.displayStoredExchangeRate(exchangeRate1);
+        return exchangeRate;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deletePorj</Name>
+				<Source><![CDATA[
+    public void deletePorj()
+    {
+        MapEnumerator projEnum = projINTDeleteMap.getEnumerator();
+
+        while (projEnum.moveNext())
+        {
+            ProjId  proId = projEnum.currentKey();
+            DataAreaId    dataArea = projEnum.currentValue();
+
+            if (proId && dataArea)
+            { 
+                Cent_ProjectRevenueTempSumTable    projectRevenueTempSumDelTable;
+
+                projectRevenueTempSumDelTable.skipDataMethods(true);
+                projectRevenueTempSumDelTable.skipEvents(true);
+                projectRevenueTempSumDelTable.skipDatabaseLog(true);
+
+                delete_from projectRevenueTempSumDelTable where
+                    projectRevenueTempSumDelTable.ProjId == proId
+                    && projectRevenueTempSumDelTable.DataArea == dataArea;
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteRevenue</Name>
+				<Source><![CDATA[
+    public void deleteRevenue()
+    {
+        //CompanyInfo               companyInfo;
+
+        //ttsbegin;
+        //while select crosscompany DataArea from companyInfo
+        //    group by companyInfo.DataArea
+        //{
+        //    changecompany(companyInfo.DataArea)
+        //    {
+        //        Cent_ProjectRevenueTempSumTable projectRevenueTempSumTableDelete;
+
+        //        delete_from  projectRevenueTempSumTableDelete where
+        //            projectRevenueTempSumTableDelete.DataAreaId == companyInfo.DataArea;
+        //    }
+        //}
+        //ttscommit;
+
+        Cent_ProjectRevenueTempSumTable projectRevenueTempSumTableDelete;
+        projectRevenueTempSumTableDelete.skipDataMethods(true);
+        projectRevenueTempSumTableDelete.skipEvents(true);
+        projectRevenueTempSumTableDelete.skipDatabaseLog(true);
+        delete_from  projectRevenueTempSumTableDelete;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setRemarkDatetoMap</Name>
+				<Source><![CDATA[
+    public void setRemarkDatetoMap(Map _projRemarkMap)
+    {
+        Query                               query;
+        QueryRun                            qr;
+        QueryBuildDataSource                qbds;
+        Cent_ProjectRevenuePidView          projectRevenuePidView;
+        
+        str                     currentPID;
+        str                     previousPID = "";
+        str                     concatenatedRemark = "";
+        boolean                 isFirstRecord = true;
+
+        while select projectRevenuePidView
+            order by projectRevenuePidView.ProjId
+            where projectRevenuePidView.CategoryId == "True Up_Fee"
+        {
+            currentPID = projectRevenuePidView.ProjId;
+            
+            if (!isFirstRecord && currentPID != previousPID)
+            {   
+                _projRemarkMap.insert(previousPID, concatenatedRemark);
+                concatenatedRemark = "";
+            }
+
+            if (concatenatedRemark != "")
+            {
+                concatenatedRemark += "," + projectRevenuePidView.Remark;
+            }
+            else
+            {
+                concatenatedRemark = projectRevenuePidView.Remark;
+            }
+
+            previousPID = currentPID;
+            isFirstRecord = false;
+        }
+
+        if (!isFirstRecord)
+        {
+            _projRemarkMap.insert(previousPID, concatenatedRemark);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertProjectRevenueInquire</Name>
+				<Source><![CDATA[
+    public void insertProjectRevenueInquire(Cent_ProjectRevenueContract _dataContract)
+    {
+        RecordInsertList projectRevenueLineTableList = new RecordInsertList(tableNum(Cent_ProjectRevenueLineTable));
+
+        Cent_ProjectRevenueTable        projectRevenueTable;
+        Cent_ProjectRevenueLineTable    projectRevenueLineTable;
+
+        QueryBuildDataSource            projectRevenueTempSumDS;
+        str projLegal = _dataContract.parmMultiDateCompanies();
+        ProjId            projId = _dataContract.parmProjId();
+        Cent_TotalAmountType    totalAmountType = _dataContract.parmTotalAmountType();
+        Name                    proDemsionC1 = _dataContract.parmProDemsionC1();
+
+        Date1980    projectDate = _dataContract.parmProjectDate();
+        InvoiceDate invoiceStartDate = dateStartMth(projectDate);
+        InvoiceDate invoiceEndDate = dateEndMth(projectDate);
+
+        Cent_MainOrSubType  mainOrSubType = _dataContract.parmCent_MainOrSubType();
+        str id = guid2Str(newGuid());
+
+        projectRevenueTable.clear();
+        projectRevenueTable.Id = id;
+        projectRevenueTable.Locked = NoYes::No;
+        projectRevenueTable.StartDate = invoiceStartDate;
+        projectRevenueTable.EndDate = invoiceEndDate;
+        projectRevenueTable.UpdateUser = UserInfoHelp::userName(curUserId());
+        projectRevenueTable.UpdateDateTime = DateTimeUtil::utcNow();
+        projectRevenueTable.MainOrSubType = mainOrSubType;
+        projectRevenueTable.insert();
+
+        Map projRemarkMap = new Map(Types::String, Types::String);
+        this.setRemarkDatetoMap(projRemarkMap);
+
+        Query query = new Query(queryStr(Cent_ProjectRevenueQuery));
+        query.allowCrossCompany(true);
+        if(projLegal)
+        {
+            container entityCon = str2con(projLegal, ',');
+            int no = 1;
+            while (no <= conlen(entityCon))
+            {
+                query.addCompanyRange(conPeek(entityCon, no));
+                no++;
+            }
+        }
+        projectRevenueTempSumDS =  query.dataSourceTable(tableNum(Cent_ProjectRevenueTempSumTable));
+
+        if (projId)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, ProjId)).value(queryValue(projId));
+        }
+
+        if (totalAmountType == Cent_TotalAmountType::Yes)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, AmountCur)).value(SysQuery::valueNot(0));
+        }
+
+        if (proDemsionC1)
+        {
+            projectRevenueTempSumDS.addRange(fieldNum(Cent_ProjectRevenueTempSumTable, Dimension_C1)).value(queryValue(proDemsionC1));
+        }
+        QueryRun queryRun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            projectRevenueTempSumTable = queryRun.get(tableNum(Cent_ProjectRevenueTempSumTable));
+
+            
+            changecompany(projectRevenueTempSumTable.DataArea)
+            {
+                if (totalAmountType == Cent_TotalAmountType::Yes && projectRevenueTempSumTable.AmountCur == 0)
+                {
+                    continue;
+                }
+                projectRevenueLineTable.clear();
+                projectRevenueLineTable.Id = id;
+                projectRevenueLineTable.AccountMan = projectRevenueTempSumTable.AccountMan;
+                projectRevenueLineTable.DataArea = strUpr(projectRevenueTempSumTable.DataArea);
+                projectRevenueLineTable.AmountCur = projectRevenueTempSumTable.AmountCur;
+                projectRevenueLineTable.ProjId = projectRevenueTempSumTable.ProjId;
+                projectRevenueLineTable.TransDateMonth = projectRevenueTempSumTable.TransDateMonth;
+                projectRevenueLineTable.ProductLine = projectRevenueTempSumTable.ProductLine;
+                projectRevenueLineTable.VNSCustClassificationId = projectRevenueTempSumTable.VNSCustClassificationId;
+                projectRevenueLineTable.Dimension_C1 = projectRevenueTempSumTable.Dimension_C1;
+                projectRevenueLineTable.CustomerName = projectRevenueTempSumTable.CustomerName;
+                projectRevenueLineTable.CustAccount = projectRevenueTempSumTable.CustAccount;
+                projectRevenueLineTable.BOName = projectRevenueTempSumTable.BOName;
+                projectRevenueLineTable.WorkerResponsible = projectRevenueTempSumTable.WorkerResponsible;
+                projectRevenueLineTable.MainORSub = projectRevenueTempSumTable.MainORSub;
+                projectRevenueLineTable.Subconc = projectRevenueTempSumTable.Subconc;
+                projectRevenueLineTable.ResourceCompanyId = strUpr(projectRevenueTempSumTable.ResourceCompanyId);
+                projectRevenueLineTable.Name = projectRevenueTempSumTable.Name;
+                projectRevenueLineTable.Dimension_C3 = projectRevenueTempSumTable.Dimension_C3;
+                projectRevenueLineTable.Dimension_CCC = projectRevenueTempSumTable.Dimension_CCC;
+                projectRevenueLineTable.RevenueType = projectRevenueTempSumTable.RevenueType;
+                projectRevenueLineTable.ProjGroupId = projectRevenueTempSumTable.ProjGroupId;
+                projectRevenueLineTable.CurrencyId = projectRevenueTempSumTable.CurrencyId;
+                projectRevenueLineTable.OverdueTrueCur = projectRevenueTempSumTable.OverdueTrueCur;
+                projectRevenueLineTable.InvoiceTrueCur = projectRevenueTempSumTable.InvoiceTrueCur;
+                projectRevenueLineTable.OtherTrueCur = projectRevenueTempSumTable.OtherTrueCur;
+
+                if (projectRevenueLineTable.MainORSub == Cent_MainOrSubType::Sub)
+                {
+                    projectRevenueLineTable.TaxAmountCur = projectRevenueTempSumTable.TaxAmountCur;
+                    projectRevenueLineTable.TaxAmountUSDCur = projectRevenueTempSumTable.TaxAmountUSDCur;
+                    projectRevenueLineTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                    projectRevenueLineTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                    projectRevenueLineTable.RevenueIncludeCur = projectRevenueTempSumTable.RevenueIncludeCur;
+                    projectRevenueLineTable.RevenueIncludeVATCur = projectRevenueTempSumTable.RevenueIncludeVATCur;
+                }
+                else
+                {
+                    if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoCN]))
+                    {
+                        projectRevenueLineTable.TaxAmountCur = projectRevenueTempSumTable.TaxAmountCur;
+                        projectRevenueLineTable.TaxAmountUSDCur = projectRevenueTempSumTable.TaxAmountUSDCur;
+                        projectRevenueLineTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueLineTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                        projectRevenueLineTable.RevenueIncludeCur = projectRevenueTempSumTable.RevenueIncludeCur;
+                        projectRevenueLineTable.RevenueIncludeVATCur = projectRevenueTempSumTable.RevenueIncludeVATCur;
+                    }
+                    else
+                    {
+                        projectRevenueLineTable.TaxAmountCur = 0;
+                        projectRevenueLineTable.TaxAmountUSDCur = 0;
+                        projectRevenueLineTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueLineTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                        projectRevenueLineTable.RevenueIncludeCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueLineTable.RevenueIncludeVATCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                    }
+
+                    if (projectRevenueTempSumTable.DataArea == identifierStr(PTTW))
+                    {
+                        projectRevenueLineTable.AmountCur = projectRevenueTempSumTable.AmountCur;
+                        projectRevenueLineTable.TaxAmountUSDCur = projectRevenueTempSumTable.TaxAmountUSDCur;
+                        projectRevenueLineTable.TotalAmountUSDCur = projectRevenueTempSumTable.TotalAmountUSDCur;
+                        projectRevenueLineTable.RevenueIncludeVATCur = projectRevenueTempSumTable.RevenueIncludeVATCur;
+                    }
+                }
+
+                if (projectRevenueTempSumTable.DataArea == identifierStr(PTTW))
+                {
+                    if (projectRevenueTempSumTable.TaxGroupId)
+                    {
+                        projectRevenueLineTable.TaxAmountCur = decRound(projectRevenueTempSumTable.TaxAmountCur, 0);
+                        projectRevenueLineTable.TotalAmountCur = decRound(projectRevenueTempSumTable.TotalAmountCur, 0);
+                        projectRevenueLineTable.RevenueIncludeCur = decRound(projectRevenueTempSumTable.RevenueIncludeCur, 0);
+                    }
+                    else
+                    {
+                        projectRevenueLineTable.TaxAmountCur = projectRevenueTempSumTable.TaxAmountCur;
+                        projectRevenueLineTable.TotalAmountCur = projectRevenueTempSumTable.TotalAmountCur;
+                        projectRevenueLineTable.RevenueIncludeCur = projectRevenueTempSumTable.RevenueIncludeCur;
+                    }
+                }
+                
+                if (projRemarkMap.exists(projectRevenueLineTable.ProjId))
+                {
+                    projectRevenueLineTable.Remark = projRemarkMap.lookup(projectRevenueLineTable.ProjId);
+                }
+                else
+                {
+                    projectRevenueLineTable.Remark = projectRevenueTempSumTable.Remark;
+                }
+                projectRevenueLineTable.ExchangeRate = projectRevenueTempSumTable.ExchangeRate;
+                projectRevenueLineTable.TaxGroupId = projectRevenueTempSumTable.TaxGroupId;
+                projectRevenueLineTable.TaxRate = projectRevenueTempSumTable.TaxRate;
+                projectRevenueLineTable.InvoiceMainType = NoYes::No;
+                projectRevenueLineTableList.add(projectRevenueLineTable);
+            }
+        }
+        projectRevenueLineTableList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkProjectRevenueTable</Name>
+				<Source><![CDATA[
+    public boolean checkProjectRevenueTable(Cent_ProjectRevenueContract _dataContract)
+    {
+        MenuItemName menuItem = _dataContract.parmMenuItemName();
+
+        Date1980          projectDate = _dataContract.parmProjectDate();
+
+        InvoiceDate dateStartMonth = dateStartMth(projectDate);
+        InvoiceDate dateEndMonth = dateEndMth(projectDate);
+    
+        if (menuItem == menuItemActionStr(Cent_ProjectRevenueInquireMenu) && Cent_ProjectRevenueTable::exist(dateStartMonth, dateEndMonth))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

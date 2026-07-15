@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>Cent_ProjectRevenueUIBuilder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class Cent_ProjectRevenueUIBuilder extends SysOperationAutomaticUIBuilder
+{   
+    private Cent_ProjectRevenueContract dataContract;
+    private SysLookupMultiSelectCtrl    multiSelectCompanyCtrl;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>Build</Name>
+				<Source><![CDATA[
+    public void Build()
+    {   
+        Dialog dlg = this.dialog();
+        DialogGroup dlgGroup = dialog.addGroup();
+        FormBuildGroupControl groupControl = dlgGroup.control();
+
+        FormBuildGroupControl paramterGroup = groupControl.parentControl().parentControl();
+        paramterGroup.columns(1);
+
+        FormBuildStringControl projLegalControl = paramterGroup.addControl(FormControlType::String, identifierStr(projLegal));
+        projLegalControl.label("LE");      
+        projLegalControl.registerOverrideMethod(
+            methodStr(FormDateControl, lookup),
+            methodStr(Cent_ProjectRevenueUIBuilder, fieldProjLegalLookup),
+            this);
+
+        FormBuildStringControl multiCompanyControl = paramterGroup.addControl(FormControlType::String, identifierStr(MultiDateCompany));
+        multiCompanyControl.label("LE");
+
+        dataContract = this.dataContractObject() as Cent_ProjectRevenueContract;
+
+        FormBuildStringControl projControl = paramterGroup.addControl(FormControlType::String, identifierStr(projId));
+        projControl.label("@SYS110827");
+        projControl.registerOverrideMethod(
+            methodStr(FormDateControl, lookup),
+            methodStr(Cent_ProjectRevenueUIBuilder, fieldPojLookup),
+            this);
+        
+        FormBuildGroupControl dateGroup = paramterGroup.addControl(FormControlType::Group, identifierStr(DateGroup));
+        dateGroup.columns(2);
+
+        FormBuildDateControl invoiceStartDateControl = dateGroup.addControl(FormControlType::Date, identifierStr(invoiceStartDate));
+        invoiceStartDateControl.label("Voucher Start Date");
+        invoiceStartDateControl.dateValue(dateStartMth(today()));
+        invoiceStartDateControl.dateDay(DateDay::None);
+        invoiceStartDateControl.dateMonth(DateMonth::Digits2);
+
+        FormBuildDateControl invoiceEndDateControl = dateGroup.addControl(FormControlType::Date, identifierStr(invoiceEndDate));
+        invoiceEndDateControl.label("Voucher End Date");
+        invoiceEndDateControl.dateValue(dateEndMth(today()));
+        invoiceEndDateControl.dateDay(DateDay::None);
+        invoiceEndDateControl.dateMonth(DateMonth::Digits2);
+
+        FormBuildDateControl projectDateControl = dateGroup.addControl(FormControlType::Date, identifierStr(projectDate));
+        projectDateControl.label("Voucher Date");
+        projectDateControl.dateValue(dateEndMth(today()));
+        projectDateControl.dateDay(DateDay::None);
+        projectDateControl.dateMonth(DateMonth::Digits2);
+
+        
+        if (dataContract && dataContract.parmMenuItemName() == menuItemActionStr(Cent_ProjectRevenueBatchMenu))
+        {
+            multiCompanyControl.visible(false);
+            projectDateControl.visible(false);
+            projLegalControl.visible(true);
+            invoiceStartDateControl.visible(true);
+            invoiceEndDateControl.visible(true);
+        }
+        else
+        {
+            multiCompanyControl.visible(true);
+            projectDateControl.visible(true);
+            projLegalControl.visible(false);
+            invoiceStartDateControl.visible(false);
+            invoiceEndDateControl.visible(false);
+        }
+
+        FormBuildGroupControl centDate = paramterGroup.addControl(FormControlType::Group, identifierStr(CentDate));
+        centDate.columns(2);
+
+        FormBuildStringControl proDemsionC1Control = centDate.addControl(FormControlType::String, identifierStr(proDemsionC1));
+        proDemsionC1Control.label("C1");
+        proDemsionC1Control.registerOverrideMethod(
+            methodStr(FormDateControl, lookup),
+            methodStr(Cent_ProjectRevenueUIBuilder, fieldProDemsionC1Lookup),
+            this);
+
+        FormBuildCheckBoxControl totalAmountTypeControl = centDate.addControl(FormControlType::CheckBox, identifierStr(Cent_TotalAmountType));
+        totalAmountTypeControl.label("Total Amount");
+
+        FormBuildComboBoxControl invoiceStatusControl = paramterGroup.addControl(FormControlType::ComboBox, identifierStr(Cent_MainOrSubType));
+        invoiceStatusControl.label("Main/Sub");
+        invoiceStatusControl.enumType(enumNum(Cent_MainOrSubType));
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public void getFromDialog()
+    {   
+        Cent_TotalAmountType  totalAmountType;
+        Cent_MainOrSubType    mainOrSubType;
+
+        dataContract = this.dataContractObject() as Cent_ProjectRevenueContract;
+
+        FormRun fr = this.dialog().dialogForm().formRun();
+        super();
+
+        FormStringControl projLegalStringControl = fr.design().controlName(identifierStr(projLegal));
+        FormStringControl projIdStringControl = fr.design().controlName(identifierStr(projId));
+        FormDateControl   invoiceStartDateControl = fr.design().controlName(identifierStr(invoiceStartDate));
+        FormDateControl   invoiceEndDateControl = fr.design().controlName(identifierStr(invoiceEndDate));
+        FormStringControl proDemsionC1StringControl = fr.design().controlName(identifierStr(proDemsionC1));
+        FormCheckBoxControl totalAmountTypeControl = fr.design().controlName(identifierStr(Cent_TotalAmountType));
+        FormComboBoxControl mainOrSubTypeControl = fr.design().controlName(identifierStr(Cent_MainOrSubType));
+        FormDateControl  projectDateControl = fr.design().controlName(identifierStr(projectDate));
+
+        dataContract.parmProjLegal(projLegalStringControl.valueStr());       
+        dataContract.parmProjId(projIdStringControl.valueStr());   
+        dataContract.parmInvoiceStartDate(invoiceStartDateControl.dateValue());
+        dataContract.parmInvoiceEndDate(invoiceEndDateControl.dateValue());
+        dataContract.parmProDemsionC1(proDemsionC1StringControl.valueStr());
+        dataContract.parmTotalAmountType(totalAmountTypeControl.value());
+        dataContract.parmCent_MainOrSubType(str2Enum(mainOrSubType, mainOrSubTypeControl.valueStr()));
+        dataContract.parmProjectDate(projectDateControl.dateValue());
+
+        if (multiSelectCompanyCtrl)
+        {
+            container selectedCompanies = multiSelectCompanyCtrl.getSelectedFieldValues();
+            dataContract.parmMultiDateCompanies(con2Str(selectedCompanies, ','));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fieldProjLegalLookup</Name>
+				<Source><![CDATA[
+    public boolean fieldProjLegalLookup(FormStringControl _control)
+    {   
+        QueryBuildDataSource    queryBuildDataSource;
+
+        SysTableLookup  sysTableLookup = sysTableLookup::newParameters(tableNum(CompanyView), _control, false);
+        sysTableLookup.addLookupfield(fieldNum(CompanyView, ID), true);
+        sysTableLookup.addLookupfield(fieldNum(CompanyView, Name), false);
+
+        Query query = new Query();
+        queryBuildDataSource = query.addDataSource(tableNum(CompanyView));
+
+        sysTableLookup.parmQuery(query);
+        sysTableLookup.performFormLookup();
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fieldProDemsionC1Lookup</Name>
+				<Source><![CDATA[
+    public boolean fieldProDemsionC1Lookup(FormStringControl _control)
+    {
+        SysTableLookup  sysTablelookup;
+        QueryBuildDataSource    dimensionDS;
+        QueryBuildRange         dimensionRange;
+
+        sysTablelookup = sysTablelookup::newParameters(tableNum(dimensionAttributeValue), _control, false);
+        sysTableLookup.addLookupfield(fieldNum(dimensionAttributeValue, DisplayValue), true);
+        sysTableLookup.addSelectionField(fieldNum(dimensionAttributeValue, DimensionAttribute));
+
+        Query query = new Query();
+        query.allowCrossCompany(true);
+
+        dimensionDS = query.addDataSource(tableNum(dimensionAttributeValue));
+        dimensionRange = dimensionDS.addRange(fieldNum(dimensionAttributeValue, DimensionAttribute));
+
+        Name proDemsionC1Name = ProjParameters::find().VNSGobalProjC4;
+        RecId financialTagId = DimensionAttribute::findByName(proDemsionC1Name).RecId;
+
+        dimensionRange.value(SysQuery::value(financialTagId));
+
+        sysTableLookup.parmQuery(query);
+        sysTableLookup.performFormLookup();
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fieldPojLookup</Name>
+				<Source><![CDATA[
+    public boolean fieldPojLookup(FormStringControl _control)
+    {   
+        SysTableLookup  sysTablelookup;
+        QueryBuildDataSource    projTableDS;
+
+        FormRun fr = this.dialog().dialogForm().formRun();
+        FormStringControl projLegalStringControl = fr.design().controlName(identifierStr(projLegal));
+        Str1260 legalEneity = projLegalStringControl.valueStr();
+
+
+        sysTablelookup = sysTablelookup::newParameters(tableNum(ProjTable), _control, false);
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, ProjId), true);
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, Name));
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, Type));
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, DataAreaId));
+        sysTableLookup.addSelectionField(fieldNum(ProjTable, DataAreaId));
+
+        if (legalEneity)
+        {
+            changecompany(legalEneity)
+            {
+                Query query = new Query();      
+                projTableDS = query.addDataSource(tableNum(ProjTable));
+                sysTableLookup.parmQuery(query);
+                sysTableLookup.performFormLookup();
+            }
+        }
+        else
+        {
+            Query query = new Query();
+            query.allowCrossCompany(true);
+            projTableDS = query.addDataSource(tableNum(ProjTable));
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postRun</Name>
+				<Source><![CDATA[
+    public void postRun()
+    {
+        super();
+
+        Cent_ProjectRevenueContract contract = this.dataContractObject();
+
+        FormRun fr = this.dialog().dialogForm().formRun();
+        FormStringControl multiCompanyControl = fr.design().controlName(identifierStr(MultiDateCompany));
+
+        if (multiCompanyControl && multiCompanyControl.visible())
+        {
+            Query query = new Query();
+            QueryBuildDataSource qbds = query.addDataSource(tableNum(CompanyView));
+
+            qbds.addRange(fieldnum(CompanyView, ID)).value(SysQuery::valueNot("DAT"));
+            qbds.addSelectionField(fieldNum(CompanyView, ID));
+            qbds.addSelectionField(fieldNum(CompanyView, Name));
+
+
+            container selectedField = [tableNum(CompanyView), fieldNum(CompanyView, ID)];
+      
+            multiSelectCompanyCtrl = SysLookupMultiSelectCtrl::constructWithQuery(this.dialog().formRun(), multiCompanyControl, query, false, selectedField);
+
+
+            multiSelectCompanyCtrl.set(['', contract.parmProjLegal()]);
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>
